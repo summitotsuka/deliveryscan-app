@@ -6,6 +6,7 @@
 <title>ระบบส่งสินค้า · Scan Confirm TAG</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
     --ink:#1a2332;        /* น้ำเงินเข้มโรงงาน */
@@ -148,7 +149,7 @@
       <span class="step-no">2</span><span class="step-title">QR ลูกค้า (Customer)</span>
       <span class="step-hint" id="hintCus">0/71</span>
     </div>
-    <textarea class="scan" id="cusQR" rows="2" placeholder="สแกน QR Code คำสั่งซื้อลูกค้า (71 ตัวอักษร)"></textarea>
+    <textarea class="scan" id="cusQR" rows="2" placeholder="สแกน QR Code คำสั่งซื้อลูกค้า (65-72 ตัวอักษร)"></textarea>
     <div class="parse" id="parseCus"></div>
   </div>
 
@@ -204,6 +205,11 @@
     <div class="sum-card"><div class="n dir-out" id="sumOut">0</div><div class="l">OUT ส่งออก</div></div>
     <div class="sum-card"><div class="n dir-in" id="sumIn">0</div><div class="l">IN รับคืน</div></div>
   </div>
+  <div id="rExportBar" style="display:none;gap:.5rem;margin-bottom:.6rem">
+    <button class="btn" id="btnXlsx" style="flex:1;background:#1d6f42;padding:.6rem;font-size:.85rem">⬇ Excel</button>
+    <button class="btn" id="btnCsv"  style="flex:1;background:#4a5a6c;padding:.6rem;font-size:.85rem">⬇ CSV</button>
+    <button class="btn" id="btnPdf"  style="flex:1;background:#8a3232;padding:.6rem;font-size:.85rem">🖨 PDF</button>
+  </div>
   <div class="table-wrap" id="rTableWrap" style="display:none">
     <table>
       <thead><tr>
@@ -223,9 +229,10 @@
  * ตั้งค่า: วาง URL ของ Web App ที่ได้จากการ Deploy Google Apps Script
  * (Deploy > New deployment > Web app > Anyone) ตรงนี้
  * ============================================================ */
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyLYaqllB6P5-0k47IXAytvHp8_jd4sC3da_NjsIiAmXP6wJrG7cUIVFUTOfR1eQ3iI/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/XXXXXXXXXXXXXXXX/exec';
 
-const CUS_LEN = 71;   // ความยาว QR ลูกค้า
+const CUS_LEN = 72;   // ความยาวเต็มของ QR ลูกค้า (WH = 7 หลัก)
+const CUS_MIN = 65;   // ขั้นต่ำ กรณีเครื่องสแกนตัดช่องว่างท้ายทิ้ง (ฟิลด์คงที่ครบที่ตำแหน่ง 65)
 const COM_LEN = 95;   // ความยาว QR บริษัท
 
 const $ = id => document.getElementById(id);
@@ -294,11 +301,12 @@ document.querySelectorAll('.tab').forEach(btn=>{
  * ระบบเลื่อนช่องเมื่อ: (ก) กด Enter หรือ (ข) ความยาวครบตามที่กำหนด
  * ============================================================ */
 function parseCus(qr){
-  if(qr.length < CUS_LEN) return null;
+  if(qr.length < CUS_MIN || qr.length > CUS_LEN) return null;
+  qr = qr.padEnd(CUS_LEN, ' ');   // เติมช่องว่างท้ายที่เครื่องสแกนตัดทิ้งกลับให้ครบ 72
   return {
     orderNo:qr.substring(0,10).trim(), tagNo:qr.substring(10,13).trim(),
     qty2:qr.substring(19,25), partNo:qr.substring(33,43).trim(),
-    partName:qr.substring(43,59).trim(), wh:qr.substring(65,71).trim()
+    partName:qr.substring(43,59).trim(), wh:qr.substring(65,72).trim()
   };
 }
 function parseCom(qr){
@@ -333,7 +341,7 @@ function refreshOutState(){
     pc.innerHTML = `Order: <b>${cus.orderNo}</b> · Part: <b>${cus.partNo}</b> · Qty: <b>${parseInt(cus.qty2)||0}</b><br>${cus.partName} · WH <b>${cus.wh}</b>`;
   }else if(cusV){
     pc.className='parse show err';
-    pc.textContent = 'ความยาวยังไม่ครบ ' + CUS_LEN + ' ตัวอักษร';
+    pc.textContent = 'ความยาวไม่ถูกต้อง (ต้องมี ' + CUS_MIN + '-' + CUS_LEN + ' ตัวอักษร ขณะนี้ ' + cusV.length + ')';
   }else pc.className='parse';
 
   // แสดงผล parse บริษัท + เช็ค Part No ตรงกันทันที
@@ -468,6 +476,8 @@ $('btnSubmitIn').addEventListener('click', submitIn);
   $('rEnd').value = today;
 })();
 
+let lastReport = [];   // เก็บผลรายงานล่าสุดไว้สำหรับดาวน์โหลด
+
 $('btnReport').addEventListener('click', async ()=>{
   busy(true,'กำลังโหลดรายงาน…');
   try{
@@ -506,11 +516,74 @@ $('btnReport').addEventListener('click', async ()=>{
       body.appendChild(frag);
     }
     $('rTableWrap').style.display='block';
+    lastReport = r.data;
+    $('rExportBar').style.display = r.data.length ? 'flex' : 'none';
     toast(r.message,'ok',2000);
   }catch(err){
     busy(false);
     toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + err.message,'err',6000);
   }
+});
+
+/* ---------- ดาวน์โหลดรายงาน: Excel / CSV / PDF ---------- */
+const EXPORT_HEADERS = ['วันที่','ทิศทาง','Box No','Order No','Part No','Part Name','Qty','WH','LOT','PRQ No','ผู้บันทึก','เวลา'];
+const rowToArray = r => [r.date, r.direction, r.boxNo, r.orderNo, r.partNo, r.partName, r.qty, r.wh, r.lot, r.prqNo, r.username, r.timestamp];
+const exportName = () => 'report_' + $('rStart').value + '_to_' + $('rEnd').value;
+
+function downloadBlob(blob, filename){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 3000);
+}
+
+// Excel (.xlsx) ผ่าน SheetJS
+$('btnXlsx').addEventListener('click', ()=>{
+  if(!lastReport.length) return;
+  const aoa = [EXPORT_HEADERS, ...lastReport.map(rowToArray)];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:11},{wch:7},{wch:12},{wch:12},{wch:12},{wch:20},{wch:6},{wch:9},{wch:11},{wch:12},{wch:12},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Report');
+  XLSX.writeFile(wb, exportName() + '.xlsx');
+});
+
+// CSV (มี BOM เพื่อให้ Excel เปิดภาษาไทยไม่เพี้ยน)
+$('btnCsv').addEventListener('click', ()=>{
+  if(!lastReport.length) return;
+  const esc = v => '"' + String(v ?? '').replace(/"/g,'""') + '"';
+  const lines = [EXPORT_HEADERS.map(esc).join(',')]
+    .concat(lastReport.map(r => rowToArray(r).map(esc).join(',')));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  downloadBlob(blob, exportName() + '.csv');
+});
+
+// PDF ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์ (รองรับฟอนต์ไทยแน่นอน — เลือก Save as PDF)
+$('btnPdf').addEventListener('click', ()=>{
+  if(!lastReport.length) return;
+  const rowsHtml = lastReport.map(r =>
+    '<tr>' + rowToArray(r).map(v => '<td>' + String(v ?? '') + '</td>').join('') + '</tr>').join('');
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+    <title>${exportName()}</title>
+    <style>
+      body{font-family:'Sarabun','Tahoma',sans-serif;font-size:11px;margin:16px}
+      h2{font-size:15px;margin:0 0 2px}
+      .sub{color:#555;margin:0 0 10px;font-size:11px}
+      table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #999;padding:3px 5px;text-align:left;white-space:nowrap}
+      th{background:#e8ecef}
+      @media print{ @page{size:A4 landscape;margin:10mm} }
+    </style></head><body>
+    <h2>รายงานการเข้า-ออก Box / การส่งออก</h2>
+    <p class="sub">ช่วงวันที่ ${$('rStart').value} ถึง ${$('rEnd').value} ·
+      ทั้งหมด ${$('sumTotal').textContent} รายการ (OUT ${$('sumOut').textContent} / IN ${$('sumIn').textContent}) ·
+      พิมพ์เมื่อ ${new Date().toLocaleString('th-TH')}</p>
+    <table><thead><tr>${EXPORT_HEADERS.map(h=>'<th>'+h+'</th>').join('')}</tr></thead>
+    <tbody>${rowsHtml}</tbody></table></body></html>`);
+  w.document.close();
+  w.onload = () => w.print();
 });
 
 /* ---------- ทดสอบการเชื่อมต่อเมื่อเปิดหน้า ---------- */
