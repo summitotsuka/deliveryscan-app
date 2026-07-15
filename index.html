@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>ระบบส่งสินค้า · Scan Confirm TAG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1a2332;        /* น้ำเงินเข้มโรงงาน */
+    --ink-soft:#3d4a5c;
+    --paper:#f2f4f6;
+    --card:#ffffff;
+    --line:#d7dde3;
+    --accent:#0e7c66;     /* เขียวสถานะผ่าน */
+    --accent-soft:#e2f3ee;
+    --danger:#c0392b;
+    --danger-soft:#fbeae7;
+    --warn:#b07d0a;
+    --warn-soft:#fdf3dc;
+    --mono:'IBM Plex Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html{font-size:16px}
+  body{font-family:'Sarabun',sans-serif;background:var(--paper);color:var(--ink);min-height:100vh}
+
+  /* ---------- Header ---------- */
+  .header{background:var(--ink);color:#fff;padding:.7rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+  .header h1{font-size:1.05rem;font-weight:700;letter-spacing:.02em}
+  .header .conn{font-family:var(--mono);font-size:.7rem;padding:.15rem .5rem;border-radius:99px;background:#37475c;white-space:nowrap}
+  .header .conn.ok{background:var(--accent)}
+  .header .conn.bad{background:var(--danger)}
+
+  /* ---------- Username bar ---------- */
+  .userbar{display:flex;gap:.5rem;align-items:center;background:#26344a;color:#cdd6e0;padding:.45rem 1rem;font-size:.85rem}
+  .userbar input{flex:1;max-width:12rem;border:none;border-radius:6px;padding:.35rem .6rem;font-family:'Sarabun';font-size:.9rem}
+
+  /* ---------- Tabs ---------- */
+  .tabs{display:flex;background:var(--card);border-bottom:2px solid var(--line);position:sticky;top:0;z-index:50}
+  .tab{flex:1;padding:.85rem .25rem;text-align:center;font-size:.95rem;font-weight:600;color:var(--ink-soft);border:none;background:none;border-bottom:3px solid transparent;cursor:pointer}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+  .page{display:none;padding:1rem;max-width:640px;margin:0 auto}
+  .page.active{display:block}
+
+  /* ---------- Scan steps ---------- */
+  .step{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.9rem;margin-bottom:.8rem;transition:border-color .15s, box-shadow .15s}
+  .step.current{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .step.done{border-color:var(--accent)}
+  .step.error{border-color:var(--danger);box-shadow:0 0 0 3px var(--danger-soft)}
+  .step-head{display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem}
+  .step-no{width:1.7rem;height:1.7rem;border-radius:50%;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.9rem;font-weight:700;flex-shrink:0}
+  .step.done .step-no{background:var(--accent)}
+  .step.error .step-no{background:var(--danger)}
+  .step-title{font-weight:700;font-size:.98rem}
+  .step-hint{font-size:.75rem;color:var(--ink-soft);margin-left:auto;font-family:var(--mono)}
+
+  input.scan,textarea.scan{
+    width:100%;border:1.5px solid var(--line);border-radius:8px;
+    padding:.7rem .8rem;font-family:var(--mono);font-size:.95rem;
+    background:#fafbfc;resize:none;
+  }
+  input.scan:focus,textarea.scan:focus{outline:none;border-color:var(--accent);background:#fff}
+
+  .parse{display:none;margin-top:.6rem;font-size:.85rem;background:var(--accent-soft);border-radius:8px;padding:.6rem .8rem;line-height:1.7}
+  .parse.show{display:block}
+  .parse.err{background:var(--danger-soft)}
+  .parse b{font-family:var(--mono)}
+
+  /* ---------- Buttons ---------- */
+  .btn{width:100%;border:none;border-radius:10px;padding:1rem;font-family:'Sarabun';font-size:1.1rem;font-weight:700;cursor:pointer;color:#fff}
+  .btn-main{background:var(--accent)}
+  .btn-main:disabled{background:#a7b3ac;cursor:not-allowed}
+  .btn-ghost{background:var(--ink-soft);margin-top:.5rem;font-size:.9rem;padding:.65rem}
+  .btn:active{transform:scale(.99)}
+
+  /* ---------- Toast ---------- */
+  #toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:200;
+    min-width:80%;max-width:94%;padding:.9rem 1rem;border-radius:10px;color:#fff;
+    font-size:.95rem;font-weight:600;display:none;text-align:center;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+  #toast.ok{background:var(--accent);display:block}
+  #toast.err{background:var(--danger);display:block}
+  #toast.warn{background:var(--warn);display:block}
+
+  /* ---------- Overlay ---------- */
+  #overlay{position:fixed;inset:0;background:rgba(255,255,255,.72);z-index:150;display:none;align-items:center;justify-content:center;flex-direction:column;gap:.8rem}
+  #overlay.show{display:flex}
+  .spinner{width:44px;height:44px;border:4px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ---------- Return page ---------- */
+  .bigline{font-size:2rem;font-family:var(--mono);text-align:center;margin:.8rem 0;color:var(--ink)}
+  .history{margin-top:1rem;font-size:.85rem}
+  .history li{list-style:none;padding:.45rem .6rem;border-bottom:1px dashed var(--line);display:flex;justify-content:space-between;font-family:var(--mono)}
+
+  /* ---------- Report ---------- */
+  .filter-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.8rem}
+  .filter-grid label{font-size:.78rem;font-weight:600;color:var(--ink-soft);display:block;margin-bottom:.2rem}
+  .filter-grid input,.filter-grid select{width:100%;border:1.5px solid var(--line);border-radius:8px;padding:.55rem .6rem;font-family:'Sarabun';font-size:.9rem;background:#fff}
+  .summary{display:flex;gap:.6rem;margin:.8rem 0}
+  .sum-card{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:.6rem;text-align:center}
+  .sum-card .n{font-family:var(--mono);font-size:1.4rem;font-weight:700}
+  .sum-card .l{font-size:.72rem;color:var(--ink-soft)}
+  .table-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:.78rem;min-width:760px}
+  th{background:var(--ink);color:#fff;padding:.5rem .55rem;text-align:left;white-space:nowrap;position:sticky;top:0}
+  td{padding:.45rem .55rem;border-bottom:1px solid var(--line);white-space:nowrap;font-family:var(--mono)}
+  tr:nth-child(even) td{background:#f7f9fa}
+  .dir-out{color:var(--danger);font-weight:700}
+  .dir-in{color:var(--accent);font-weight:700}
+
+  .note{font-size:.78rem;color:var(--ink-soft);margin:.4rem 0 .8rem}
+  .switch{display:flex;align-items:center;gap:.5rem;font-size:.85rem;margin:.6rem 0}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ระบบส่งสินค้า / รับ Box คืน</h1>
+  <span class="conn" id="connBadge">กำลังเชื่อมต่อ…</span>
+</div>
+<div class="userbar">
+  <span>ผู้ใช้งาน:</span>
+  <input id="username" placeholder="รหัส/ชื่อพนักงาน" autocomplete="off">
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-page="pageOut">ส่งสินค้า</button>
+  <button class="tab" data-page="pageIn">รับ Box คืน</button>
+  <button class="tab" data-page="pageReport">รายงาน</button>
+</div>
+
+<!-- ============ 1) ส่งสินค้า (OUT) ============ -->
+<div class="page active" id="pageOut">
+  <p class="note">สแกนตามลำดับ 1 → 2 → 3 ระบบจะเลื่อนช่องให้อัตโนมัติ เมื่อครบ 3 ช่องจะตรวจสอบและบันทึกทันที</p>
+
+  <div class="step current" id="stepBox">
+    <div class="step-head">
+      <span class="step-no">1</span><span class="step-title">Box No</span>
+      <span class="step-hint" id="hintBox"></span>
+    </div>
+    <input class="scan" id="boxNo" placeholder="สแกน QR Code Box" autocomplete="off" inputmode="none">
+  </div>
+
+  <div class="step" id="stepCus">
+    <div class="step-head">
+      <span class="step-no">2</span><span class="step-title">QR ลูกค้า (Customer)</span>
+      <span class="step-hint" id="hintCus">0/71</span>
+    </div>
+    <textarea class="scan" id="cusQR" rows="2" placeholder="สแกน QR Code คำสั่งซื้อลูกค้า (71 ตัวอักษร)"></textarea>
+    <div class="parse" id="parseCus"></div>
+  </div>
+
+  <div class="step" id="stepCom">
+    <div class="step-head">
+      <span class="step-no">3</span><span class="step-title">QR บริษัท (Company)</span>
+      <span class="step-hint" id="hintCom">0/95</span>
+    </div>
+    <textarea class="scan" id="comQR" rows="2" placeholder="สแกน QR Code ของบริษัท (95 ตัวอักษร)"></textarea>
+    <div class="parse" id="parseCom"></div>
+  </div>
+
+  <div class="switch">
+    <input type="checkbox" id="autoSubmit" checked>
+    <label for="autoSubmit">บันทึกอัตโนมัติเมื่อสแกนครบ 3 ช่อง</label>
+  </div>
+
+  <button class="btn btn-main" id="btnSubmitOut" disabled>ตรวจสอบและบันทึก (OUT)</button>
+  <button class="btn btn-ghost" id="btnClearOut">ล้างฟอร์ม</button>
+</div>
+
+<!-- ============ 2) รับ Box คืน (IN) ============ -->
+<div class="page" id="pageIn">
+  <p class="note">สแกน Box No ระบบจะบันทึกรับคืนทันที (Direction = IN)</p>
+  <div class="step current">
+    <div class="step-head"><span class="step-no">1</span><span class="step-title">Box No</span></div>
+    <input class="scan" id="returnBoxNo" placeholder="สแกน QR Code Box" autocomplete="off" inputmode="none">
+  </div>
+  <div class="bigline" id="lastReturn">—</div>
+  <button class="btn btn-main" id="btnSubmitIn">บันทึกรับคืน (IN)</button>
+  <ul class="history" id="returnHistory"></ul>
+</div>
+
+<!-- ============ 3) รายงาน ============ -->
+<div class="page" id="pageReport">
+  <div class="filter-grid">
+    <div><label>วันที่เริ่ม</label><input type="date" id="rStart"></div>
+    <div><label>วันที่สิ้นสุด</label><input type="date" id="rEnd"></div>
+    <div><label>Order No</label><input id="rOrder" placeholder="ทั้งหมด" autocomplete="off"></div>
+    <div><label>Box No</label><input id="rBox" placeholder="ทั้งหมด" autocomplete="off"></div>
+    <div style="grid-column:1/-1"><label>ทิศทาง</label>
+      <select id="rDir">
+        <option value="ALL">ทั้งหมด (เข้า + ออก)</option>
+        <option value="OUT">OUT — ส่งออก</option>
+        <option value="IN">IN — รับคืน</option>
+      </select>
+    </div>
+  </div>
+  <button class="btn btn-main" id="btnReport" style="padding:.8rem;font-size:1rem">โหลดรายงาน</button>
+
+  <div class="summary" id="rSummary" style="display:none">
+    <div class="sum-card"><div class="n" id="sumTotal">0</div><div class="l">รายการ</div></div>
+    <div class="sum-card"><div class="n dir-out" id="sumOut">0</div><div class="l">OUT ส่งออก</div></div>
+    <div class="sum-card"><div class="n dir-in" id="sumIn">0</div><div class="l">IN รับคืน</div></div>
+  </div>
+  <div class="table-wrap" id="rTableWrap" style="display:none">
+    <table>
+      <thead><tr>
+        <th>วันที่</th><th>ทิศทาง</th><th>Box No</th><th>Order No</th><th>Part No</th>
+        <th>Part Name</th><th>Qty</th><th>WH</th><th>LOT</th><th>PRQ No</th><th>ผู้บันทึก</th><th>เวลา</th>
+      </tr></thead>
+      <tbody id="rBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="overlay"><div class="spinner"></div><div id="overlayText">กำลังตรวจสอบและบันทึก…</div></div>
+
+<script>
+/* ============================================================
+ * ตั้งค่า: วาง URL ของ Web App ที่ได้จากการ Deploy Google Apps Script
+ * (Deploy > New deployment > Web app > Anyone) ตรงนี้
+ * ============================================================ */
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyLYaqllB6P5-0k47IXAytvHp8_jd4sC3da_NjsIiAmXP6wJrG7cUIVFUTOfR1eQ3iI/exec';
+
+const CUS_LEN = 71;   // ความยาว QR ลูกค้า
+const COM_LEN = 95;   // ความยาว QR บริษัท
+
+const $ = id => document.getElementById(id);
+
+/* ---------- เรียก API (POST text/plain เพื่อเลี่ยง CORS preflight) ---------- */
+async function api(payload){
+  const res = await fetch(WEB_APP_URL, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+/* ---------- UI helpers ---------- */
+let toastTimer;
+function toast(msg, type='ok', ms=3500){
+  const t = $('toast');
+  t.textContent = msg;
+  t.className = type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ t.className=''; t.style.display='none'; }, ms);
+  t.style.display='block';
+}
+function busy(on, text){
+  $('overlayText').textContent = text || 'กำลังตรวจสอบและบันทึก…';
+  $('overlay').classList.toggle('show', !!on);
+}
+function beepOk(){ tryBeep(880,.08); }
+function beepErr(){ tryBeep(220,.25); }
+function tryBeep(freq,dur){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value=freq; o.connect(g); g.connect(ctx.destination);
+    g.gain.setValueAtTime(.15,ctx.currentTime);
+    o.start(); o.stop(ctx.currentTime+dur);
+  }catch(e){}
+}
+
+/* ---------- จำชื่อผู้ใช้ (ถ้า localStorage ใช้ได้) ---------- */
+try{
+  const saved = localStorage.getItem('scanUser');
+  if(saved) $('username').value = saved;
+  $('username').addEventListener('change', e=>{
+    try{ localStorage.setItem('scanUser', e.target.value.trim()); }catch(_){}
+  });
+}catch(e){}
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    $(btn.dataset.page).classList.add('active');
+    if(btn.dataset.page==='pageOut') setTimeout(()=>$('boxNo').focus(),100);
+    if(btn.dataset.page==='pageIn')  setTimeout(()=>$('returnBoxNo').focus(),100);
+  });
+});
+
+/* ============================================================
+ * แท็บ 1: ส่งสินค้า — Auto-tab หลังสแกน
+ * เครื่องสแกนส่วนใหญ่จะพิมพ์ข้อความแล้วตามด้วย Enter
+ * ระบบเลื่อนช่องเมื่อ: (ก) กด Enter หรือ (ข) ความยาวครบตามที่กำหนด
+ * ============================================================ */
+function parseCus(qr){
+  if(qr.length < CUS_LEN) return null;
+  return {
+    orderNo:qr.substring(0,10).trim(), tagNo:qr.substring(10,13).trim(),
+    qty2:qr.substring(19,25), partNo:qr.substring(33,43).trim(),
+    partName:qr.substring(43,59).trim(), wh:qr.substring(65,71).trim()
+  };
+}
+function parseCom(qr){
+  if(qr.length < COM_LEN) return null;
+  return {
+    tagNo:qr.substring(0,7).trim(), partNo:qr.substring(7,27).trim(),
+    partName:qr.substring(27,47).trim(), qty:qr.substring(47,53),
+    lot:qr.substring(53,63).trim(), prqNo:qr.substring(63,73).trim()
+  };
+}
+
+function setStep(el, state){ // '', 'current', 'done', 'error'
+  el.classList.remove('current','done','error');
+  if(state) el.classList.add(state);
+}
+
+function refreshOutState(){
+  const box = $('boxNo').value.trim();
+  const cusV = $('cusQR').value.trim();
+  const comV = $('comQR').value.trim();
+
+  $('hintCus').textContent = cusV.length + '/' + CUS_LEN;
+  $('hintCom').textContent = comV.length + '/' + COM_LEN;
+
+  const cus = parseCus(cusV);
+  const com = parseCom(comV);
+
+  // แสดงผล parse ลูกค้า
+  const pc = $('parseCus');
+  if(cusV && cus){
+    pc.className='parse show';
+    pc.innerHTML = `Order: <b>${cus.orderNo}</b> · Part: <b>${cus.partNo}</b> · Qty: <b>${parseInt(cus.qty2)||0}</b><br>${cus.partName} · WH <b>${cus.wh}</b>`;
+  }else if(cusV){
+    pc.className='parse show err';
+    pc.textContent = 'ความยาวยังไม่ครบ ' + CUS_LEN + ' ตัวอักษร';
+  }else pc.className='parse';
+
+  // แสดงผล parse บริษัท + เช็ค Part No ตรงกันทันที
+  const pm = $('parseCom');
+  if(comV && com){
+    const match = cus && cus.partNo === com.partNo;
+    pm.className = 'parse show' + (cus && !match ? ' err' : '');
+    pm.innerHTML = `Part: <b>${com.partNo}</b> · Qty: <b>${parseInt(com.qty)||0}</b> · LOT: <b>${com.lot}</b> · PRQ: <b>${com.prqNo}</b>`
+      + (cus ? (match ? '<br>✔ Part No ตรงกับ QR ลูกค้า' : `<br>✖ Part No ไม่ตรงกัน (ลูกค้า ${cus.partNo})`) : '');
+  }else if(comV){
+    pm.className='parse show err';
+    pm.textContent = 'ความยาวยังไม่ครบ ' + COM_LEN + ' ตัวอักษร';
+  }else pm.className='parse';
+
+  // สถานะ step
+  setStep($('stepBox'), box ? 'done' : 'current');
+  setStep($('stepCus'), cus ? 'done' : (box ? 'current' : ''));
+  setStep($('stepCom'), com ? 'done' : (cus ? 'current' : ''));
+
+  const ready = box && cus && com && cus.partNo === com.partNo;
+  $('btnSubmitOut').disabled = !ready;
+  return { box, cus, com, cusV, comV, ready };
+}
+
+// Auto-advance: Enter จากเครื่องสแกน
+function bindEnter(fromId, action){
+  $(fromId).addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); action(); }
+  });
+}
+bindEnter('boxNo', ()=>{ if($('boxNo').value.trim()) $('cusQR').focus(); });
+bindEnter('cusQR', ()=>{ if(parseCus($('cusQR').value.trim())) $('comQR').focus(); });
+bindEnter('comQR', ()=>{ maybeAutoSubmit(true); });
+
+// Auto-advance: ความยาวครบ (กรณีเครื่องสแกนไม่ส่ง Enter)
+$('boxNo').addEventListener('input', refreshOutState);
+$('cusQR').addEventListener('input', ()=>{
+  const s = refreshOutState();
+  if(s.cus && document.activeElement === $('cusQR')){ $('comQR').focus(); }
+});
+$('comQR').addEventListener('input', ()=>{
+  const s = refreshOutState();
+  if(s.com && document.activeElement === $('comQR')){ maybeAutoSubmit(false); }
+});
+
+function maybeAutoSubmit(fromEnter){
+  const s = refreshOutState();
+  if(!s.box || !s.cus || !s.com) return;
+  if(s.cus.partNo !== s.com.partNo){ beepErr(); toast('Part No ไม่ตรงกัน — ตรวจสอบ QR ทั้งสองใบ','err'); return; }
+  if($('autoSubmit').checked || fromEnter) submitOut();
+}
+
+async function submitOut(){
+  const s = refreshOutState();
+  if(!s.ready) return;
+  const username = $('username').value.trim();
+  if(!username){ toast('กรุณากรอกชื่อผู้ใช้งานก่อน','warn'); $('username').focus(); return; }
+
+  busy(true);
+  try{
+    const r = await api({ action:'submitDelivery', boxNo:s.box, cusQR:s.cusV, comQR:s.comV, username });
+    busy(false);
+    if(r.success){
+      beepOk();
+      toast('✔ ' + r.message, 'ok');
+      clearOut();
+    }else{
+      beepErr();
+      toast('✖ ' + r.message, 'err', 6000);
+      if(r.field==='boxNo'){ setStep($('stepBox'),'error'); $('boxNo').select(); $('boxNo').focus(); }
+      if(r.field==='cusQR'){ setStep($('stepCus'),'error'); $('cusQR').select(); $('cusQR').focus(); }
+      if(r.field==='comQR'){ setStep($('stepCom'),'error'); $('comQR').select(); $('comQR').focus(); }
+    }
+  }catch(err){
+    busy(false); beepErr();
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + err.message, 'err', 6000);
+  }
+}
+function clearOut(){
+  ['boxNo','cusQR','comQR'].forEach(id=>$(id).value='');
+  refreshOutState();
+  $('boxNo').focus();
+}
+$('btnSubmitOut').addEventListener('click', submitOut);
+$('btnClearOut').addEventListener('click', clearOut);
+
+/* ============================================================
+ * แท็บ 2: รับ Box คืน (IN)
+ * ============================================================ */
+let inFlight = false;
+async function submitIn(){
+  if(inFlight) return;
+  const boxNo = $('returnBoxNo').value.trim();
+  if(!boxNo){ $('returnBoxNo').focus(); return; }
+  const username = $('username').value.trim();
+  if(!username){ toast('กรุณากรอกชื่อผู้ใช้งานก่อน','warn'); $('username').focus(); return; }
+
+  inFlight = true;
+  busy(true,'กำลังบันทึกรับคืน…');
+  try{
+    const r = await api({ action:'submitReturn', boxNo, username });
+    busy(false);
+    if(r.success){
+      beepOk();
+      toast('✔ ' + r.message,'ok');
+      $('lastReturn').textContent = boxNo;
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${boxNo}</span><span>${new Date().toLocaleTimeString('th-TH')}</span>`;
+      $('returnHistory').prepend(li);
+      while($('returnHistory').children.length > 10) $('returnHistory').lastChild.remove();
+    }else{
+      beepErr();
+      toast('✖ ' + r.message,'err',6000);
+    }
+  }catch(err){
+    busy(false); beepErr();
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + err.message,'err',6000);
+  }
+  $('returnBoxNo').value='';
+  $('returnBoxNo').focus();
+  inFlight = false;
+}
+bindEnter('returnBoxNo', submitIn);
+$('btnSubmitIn').addEventListener('click', submitIn);
+
+/* ============================================================
+ * แท็บ 3: รายงาน
+ * ============================================================ */
+(function initDates(){
+  const today = new Date().toLocaleDateString('sv-SE'); // yyyy-mm-dd เวลาเครื่อง
+  $('rStart').value = today;
+  $('rEnd').value = today;
+})();
+
+$('btnReport').addEventListener('click', async ()=>{
+  busy(true,'กำลังโหลดรายงาน…');
+  try{
+    const r = await api({
+      action:'getReports',
+      startDate: $('rStart').value,
+      endDate:   $('rEnd').value,
+      orderNo:   $('rOrder').value.trim(),
+      boxNo:     $('rBox').value.trim(),
+      direction: $('rDir').value
+    });
+    busy(false);
+    if(!r.success){ toast('✖ ' + r.message,'err'); return; }
+
+    $('rSummary').style.display='flex';
+    $('sumTotal').textContent = r.summary.total;
+    $('sumOut').textContent   = r.summary.out;
+    $('sumIn').textContent    = r.summary.inn;
+
+    const body = $('rBody');
+    body.innerHTML = '';
+    if(r.data.length === 0){
+      body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:1.2rem">ไม่พบข้อมูลตามเงื่อนไข</td></tr>';
+    }else{
+      const frag = document.createDocumentFragment();
+      r.data.forEach(row=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          `<td>${row.date}</td>`+
+          `<td class="${row.direction==='OUT'?'dir-out':'dir-in'}">${row.direction}</td>`+
+          `<td>${row.boxNo}</td><td>${row.orderNo}</td><td>${row.partNo}</td>`+
+          `<td>${row.partName}</td><td>${row.qty}</td><td>${row.wh}</td>`+
+          `<td>${row.lot}</td><td>${row.prqNo}</td><td>${row.username}</td><td>${row.timestamp}</td>`;
+        frag.appendChild(tr);
+      });
+      body.appendChild(frag);
+    }
+    $('rTableWrap').style.display='block';
+    toast(r.message,'ok',2000);
+  }catch(err){
+    busy(false);
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + err.message,'err',6000);
+  }
+});
+
+/* ---------- ทดสอบการเชื่อมต่อเมื่อเปิดหน้า ---------- */
+(async function ping(){
+  const badge = $('connBadge');
+  try{
+    const r = await api({ action:'ping' });
+    if(r.success){ badge.textContent='● ONLINE'; badge.className='conn ok'; }
+    else throw new Error();
+  }catch(e){
+    badge.textContent='● OFFLINE'; badge.className='conn bad';
+    toast('ยังเชื่อมต่อ Google Apps Script ไม่ได้ — ตรวจสอบ WEB_APP_URL ในไฟล์ index.html','warn',8000);
+  }
+  $('boxNo').focus();
+})();
+</script>
+</body>
+</html>
