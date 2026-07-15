@@ -214,10 +214,26 @@
     <table>
       <thead><tr>
         <th>วันที่</th><th>ทิศทาง</th><th>Box No</th><th>Order No</th><th>Part No</th>
-        <th>Part Name</th><th>Qty</th><th>WH</th><th>LOT</th><th>PRQ No</th><th>ผู้บันทึก</th><th>เวลา</th>
+        <th>Part Name</th><th>Qty</th><th>WH</th><th>LOT</th><th>PRQ No</th><th>ผู้บันทึก</th><th>เวลา</th><th>หมายเหตุ</th>
       </tr></thead>
       <tbody id="rBody"></tbody>
     </table>
+  </div>
+
+  <!-- รายงาน Box ค้างส่ง -->
+  <div style="margin-top:1.4rem;border-top:2px dashed var(--line);padding-top:1rem">
+    <div class="filter-grid">
+      <div><label>Box ค้างส่ง — ค้างเกิน (วัน)</label><input type="number" id="pDays" value="1" min="0" inputmode="numeric"></div>
+      <div style="display:flex;align-items:flex-end">
+        <button class="btn btn-main" id="btnPending" style="padding:.65rem;font-size:.95rem">โหลด Box ค้างส่ง</button>
+      </div>
+    </div>
+    <div class="table-wrap" id="pWrap" style="display:none">
+      <table style="min-width:0">
+        <thead><tr><th>Box No</th><th>OUT ตั้งแต่</th><th>ค้าง (วัน)</th></tr></thead>
+        <tbody id="pBody"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -426,8 +442,13 @@ async function submitOut(){
     const r = await api({ action:'submitDelivery', boxNo:s.box, cusQR:s.cusV, comQR:s.comV, username });
     busy(false);
     if(r.success){
-      beepOk();
-      toast('✔ ' + r.message, 'ok');
+      if(r.warning){
+        beepErr();
+        toast('⚠ ' + r.message + '\n' + r.warning, 'warn', 9000);
+      }else{
+        beepOk();
+        toast('✔ ' + r.message, 'ok');
+      }
       clearOut();
     }else{
       beepErr();
@@ -522,7 +543,7 @@ $('btnReport').addEventListener('click', async ()=>{
     const body = $('rBody');
     body.innerHTML = '';
     if(r.data.length === 0){
-      body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:1.2rem">ไม่พบข้อมูลตามเงื่อนไข</td></tr>';
+      body.innerHTML = '<tr><td colspan="13" style="text-align:center;padding:1.2rem">ไม่พบข้อมูลตามเงื่อนไข</td></tr>';
     }else{
       const frag = document.createDocumentFragment();
       r.data.forEach(row=>{
@@ -532,7 +553,8 @@ $('btnReport').addEventListener('click', async ()=>{
           `<td class="${row.direction==='OUT'?'dir-out':'dir-in'}">${row.direction}</td>`+
           `<td>${row.boxNo}</td><td>${row.orderNo}</td><td>${row.partNo}</td>`+
           `<td>${row.partName}</td><td>${row.qty}</td><td>${row.wh}</td>`+
-          `<td>${row.lot}</td><td>${row.prqNo}</td><td>${row.username}</td><td>${row.timestamp}</td>`;
+          `<td>${row.lot}</td><td>${row.prqNo}</td><td>${row.username}</td><td>${row.timestamp}</td>`+
+          `<td style="color:var(--warn)">${row.remark || ''}</td>`;
         frag.appendChild(tr);
       });
       body.appendChild(frag);
@@ -548,8 +570,8 @@ $('btnReport').addEventListener('click', async ()=>{
 });
 
 /* ---------- ดาวน์โหลดรายงาน: Excel / CSV / PDF ---------- */
-const EXPORT_HEADERS = ['วันที่','ทิศทาง','Box No','Order No','Part No','Part Name','Qty','WH','LOT','PRQ No','ผู้บันทึก','เวลา'];
-const rowToArray = r => [r.date, r.direction, r.boxNo, r.orderNo, r.partNo, r.partName, r.qty, r.wh, r.lot, r.prqNo, r.username, r.timestamp];
+const EXPORT_HEADERS = ['วันที่','ทิศทาง','Box No','Order No','Part No','Part Name','Qty','WH','LOT','PRQ No','ผู้บันทึก','เวลา','หมายเหตุ'];
+const rowToArray = r => [r.date, r.direction, r.boxNo, r.orderNo, r.partNo, r.partName, r.qty, r.wh, r.lot, r.prqNo, r.username, r.timestamp, r.remark || ''];
 const exportName = () => 'report_' + $('rStart').value + '_to_' + $('rEnd').value;
 
 function downloadBlob(blob, filename){
@@ -565,7 +587,7 @@ $('btnXlsx').addEventListener('click', ()=>{
   if(!lastReport.length) return;
   const aoa = [EXPORT_HEADERS, ...lastReport.map(rowToArray)];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:11},{wch:7},{wch:12},{wch:12},{wch:12},{wch:20},{wch:6},{wch:9},{wch:11},{wch:12},{wch:12},{wch:20}];
+  ws['!cols'] = [{wch:11},{wch:7},{wch:12},{wch:12},{wch:12},{wch:20},{wch:6},{wch:9},{wch:11},{wch:12},{wch:12},{wch:20},{wch:40}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Report');
   XLSX.writeFile(wb, exportName() + '.xlsx');
@@ -606,6 +628,33 @@ $('btnPdf').addEventListener('click', ()=>{
     <tbody>${rowsHtml}</tbody></table></body></html>`);
   w.document.close();
   w.onload = () => w.print();
+});
+
+/* ---------- รายงาน Box ค้างส่ง (สถานะ OUT ยังไม่รับคืน) ---------- */
+$('btnPending').addEventListener('click', async ()=>{
+  busy(true,'กำลังโหลด Box ค้างส่ง…');
+  try{
+    const r = await api({ action:'getPendingBoxes', minDays: $('pDays').value });
+    busy(false);
+    if(!r.success){ toast('✖ ' + r.message,'err'); return; }
+
+    const body = $('pBody');
+    body.innerHTML = '';
+    if(r.data.length === 0){
+      body.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:1rem">ไม่มี Box ค้างส่ง 🎉</td></tr>';
+    }else{
+      r.data.forEach(row=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.boxNo}</td><td>${row.since}</td><td class="dir-out">${row.days}</td>`;
+        body.appendChild(tr);
+      });
+    }
+    $('pWrap').style.display='block';
+    toast(r.message, r.data.length ? 'warn' : 'ok', 3000);
+  }catch(err){
+    busy(false);
+    toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + err.message,'err',6000);
+  }
 });
 
 /* ---------- ทดสอบการเชื่อมต่อเมื่อเปิดหน้า ---------- */
