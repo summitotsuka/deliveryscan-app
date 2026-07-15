@@ -354,7 +354,7 @@ function refreshOutState(){
   const pc = $('parseCus');
   if(cusV && cus){
     pc.className='parse show';
-    pc.innerHTML = `Order: <b>${cus.orderNo}</b> · Part: <b>${cus.partNo}</b> · Qty: <b>${parseInt(cus.qty2)||0}</b><br>${cus.partName} · WH <b>${cus.wh}</b>`;
+    pc.innerHTML = `Order: <b>${cus.orderNo}</b> · Tag: <b>${cus.tagNo}</b> · Part: <b>${cus.partNo}</b> · Qty: <b>${parseInt(cus.qty2)||0}</b><br>${cus.partName} · WH <b>${cus.wh}</b>`;
   }else if(cusV){
     pc.className='parse show err';
     pc.textContent = 'ความยาวไม่ถูกต้อง (ต้องมี ' + CUS_MIN + '-' + CUS_LEN + ' ตัวอักษร ขณะนี้ ' + cusV.length + ')';
