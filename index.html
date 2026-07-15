@@ -377,14 +377,32 @@ bindEnter('cusQR', ()=>{ if(parseCus($('cusQR').value.trim())) $('comQR').focus(
 bindEnter('comQR', ()=>{ maybeAutoSubmit(true); });
 
 // Auto-advance: ความยาวครบ (กรณีเครื่องสแกนไม่ส่ง Enter)
+// สำคัญ: ต้องรอให้การพิมพ์หยุดนิ่งก่อน (debounce) เพราะเครื่องสแกนส่งตัวอักษร
+// เข้ามาทีละตัว ถ้าเลื่อนช่องทันทีที่ความยาวถึงขั้นต่ำ ตัวอักษรที่เหลือจะไหลไปช่องถัดไป
+const SCAN_SETTLE_MS = 250;
+let cusTimer = null, comTimer = null;
+
 $('boxNo').addEventListener('input', refreshOutState);
+
 $('cusQR').addEventListener('input', ()=>{
-  const s = refreshOutState();
-  if(s.cus && document.activeElement === $('cusQR')){ $('comQR').focus(); }
+  refreshOutState();
+  clearTimeout(cusTimer);
+  cusTimer = setTimeout(()=>{
+    if(parseCus($('cusQR').value.trim()) && document.activeElement === $('cusQR')){
+      $('comQR').focus();
+      refreshOutState();
+    }
+  }, SCAN_SETTLE_MS);
 });
+
 $('comQR').addEventListener('input', ()=>{
-  const s = refreshOutState();
-  if(s.com && document.activeElement === $('comQR')){ maybeAutoSubmit(false); }
+  refreshOutState();
+  clearTimeout(comTimer);
+  comTimer = setTimeout(()=>{
+    if(parseCom($('comQR').value.trim()) && document.activeElement === $('comQR')){
+      maybeAutoSubmit(false);
+    }
+  }, SCAN_SETTLE_MS);
 });
 
 function maybeAutoSubmit(fromEnter){
@@ -394,12 +412,15 @@ function maybeAutoSubmit(fromEnter){
   if($('autoSubmit').checked || fromEnter) submitOut();
 }
 
+let outFlight = false;   // กันการบันทึกซ้ำซ้อน (Enter + auto-submit ยิงพร้อมกัน)
 async function submitOut(){
+  if(outFlight) return;
   const s = refreshOutState();
   if(!s.ready) return;
   const username = $('username').value.trim();
   if(!username){ toast('กรุณากรอกชื่อผู้ใช้งานก่อน','warn'); $('username').focus(); return; }
 
+  outFlight = true;
   busy(true);
   try{
     const r = await api({ action:'submitDelivery', boxNo:s.box, cusQR:s.cusV, comQR:s.comV, username });
@@ -419,6 +440,7 @@ async function submitOut(){
     busy(false); beepErr();
     toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: ' + err.message, 'err', 6000);
   }
+  outFlight = false;
 }
 function clearOut(){
   ['boxNo','cusQR','comQR'].forEach(id=>$(id).value='');
